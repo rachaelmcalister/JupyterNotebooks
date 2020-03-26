@@ -1,9 +1,0 @@
-transaction_garment_category_id
-profile_id
-transaction_garment_id
-transaction_date
-quantity
-return_quantity
-transaction_size
-transaction_base_size_id
-transaction_sizing_range_id

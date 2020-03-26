@@ -1,7 +1,0 @@
-SELECT
-    sizing_range_id,
-    base_size_id,
-    bust_metric,
-    waist_metric,
-    hips_metric
-FROM shared_resources.temp_fit_model_brand_sizes

@@ -1,4 +1,0 @@
-signup_size_category_id
-profile_id
-signup_base_size_id
-signup_sizing_range_id
