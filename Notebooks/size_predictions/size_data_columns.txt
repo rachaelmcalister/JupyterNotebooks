@@ -1,0 +1,5 @@
+sizing_range_id
+base_size_id
+bust_metric
+waist_metric
+hips_metric

@@ -1,0 +1,8 @@
+profile_id
+finished_signup_at
+dresses_base_size_id
+tops_base_size_id
+trousers_base_size_id
+dresses_sizing_range_id
+tops_sizing_range_id
+trousers_sizing_range_id

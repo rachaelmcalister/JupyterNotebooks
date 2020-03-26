@@ -1,0 +1,9 @@
+garment_category_id
+profile_id
+sizing_range_id
+garment_id
+quantity
+return_quantity
+real_base_size_id
+pred_base_size_id
+correct_pred

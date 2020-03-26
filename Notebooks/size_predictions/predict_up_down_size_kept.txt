@@ -1,0 +1,199 @@
+WITH
+temp_nick_size_pred_test_set as
+(
+SELECT
+    t.garment_category_id,
+    t.profile_id,
+    t.garment_id,
+    t.order_date AS date,
+    t.quantity,
+    t.return_quantity,
+    t.size,
+    b.base_size_id,
+    g.sizing_range_id
+FROM activity_johnlewis.v_transaction_labelled_garments AS t
+INNER JOIN activity_johnlewis.v_garment_this_partner AS g
+ON t.garment_id = g.garment_id
+LEFT JOIN activity_johnlewis.temp_d_sku_garment_id_base_size AS b
+ON t.garment_id = b.garment_id AND t.size = b.size
+WHERE profile_complete = true AND profile_signup_finished_at::date <= order_day
+    AND '2019-11-01' <= order_day AND order_day < '2019-12-01'
+    AND '2019-01-01' <= profile_signup_finished_at AND profile_signup_finished_at < '2019-11-01'
+    AND base_size_id IS NOT null
+),
+temp_nick_size_pred_query_set as
+(
+SELECT DISTINCT garment_category_id, profile_id, sizing_range_id FROM temp_nick_size_pred_test_set
+),
+quiz_sizes_all_users AS
+(
+    SELECT
+        p.profile_id,
+        p.finished_signup_at,
+        s.dresses_base_size_id,
+        s.tops_base_size_id,
+        s.trousers_base_size_id,
+        s.dresses_sizing_range_id,
+        s.tops_sizing_range_id,
+        s.trousers_sizing_range_id
+    FROM activity_johnlewis.v_profile_this_partner AS p
+    INNER JOIN shared_resources.d_profile_signup_size AS s
+    ON p.profile_id = s.profile_id
+    WHERE s.dresses_base_size_id IS NOT NULL
+        AND finished_signup_at < '2019-11-01'
+),
+quiz_sizes_pivot_all_users AS
+(
+    SELECT
+        1 AS signup_size_category_id,
+        profile_id,
+        finished_signup_at,
+        dresses_base_size_id AS base_size_id,
+        dresses_sizing_range_id AS sizing_range_id
+    FROM quiz_sizes_all_users
+    UNION ALL
+    SELECT
+        6 AS signup_size_category_id,
+        profile_id,
+        finished_signup_at,
+        tops_base_size_id AS base_size_id,
+        tops_sizing_range_id AS sizing_range_id
+    FROM quiz_sizes_all_users
+    UNION ALL
+    SELECT
+        12 AS signup_size_category_id,
+        profile_id,
+        finished_signup_at,
+        tops_base_size_id AS base_size_id,
+        tops_sizing_range_id AS sizing_range_id
+    FROM quiz_sizes_all_users
+    UNION ALL
+    SELECT
+        9 AS signup_size_category_id,
+        profile_id,
+        finished_signup_at,
+        trousers_base_size_id AS base_size_id,
+        trousers_sizing_range_id AS sizing_range_id
+    FROM quiz_sizes_all_users
+),
+training_data_purchases AS
+(
+    SELECT
+        t.garment_category_id,
+        t.profile_id,
+        t.garment_id,
+        t.order_date AS date,
+        t.quantity,
+        t.return_quantity,
+        t.size,
+        b.base_size_id,
+        g.sizing_range_id
+    FROM activity_johnlewis.v_transaction_labelled_garments AS t
+    INNER JOIN activity_johnlewis.v_garment_this_partner AS g
+    ON t.garment_id = g.garment_id
+    LEFT JOIN activity_johnlewis.temp_d_sku_garment_id_base_size AS b
+    ON t.garment_id = b.garment_id AND t.size = b.size
+    WHERE profile_complete = true AND profile_signup_finished_at::date <= order_day
+        AND order_day < '2019-11-01'
+        AND profile_signup_finished_at < '2019-11-01'
+        AND base_size_id IS NOT NULL
+        AND (quantity - return_quantity) > 0
+),
+coocc AS
+(
+    SELECT
+        quiz.signup_size_category_id AS quiz_signup_size_category_id,
+        quiz.sizing_range_id AS quiz_sizing_range_id,
+        transactions.garment_category_id AS transactions_garment_category_id,
+        transactions.sizing_range_id AS transactions_sizing_range_id,
+        quiz.base_size_id as quiz_base_size_id,
+        CASE
+            WHEN quiz.base_size_id = transactions.base_size_id THEN 'same'
+            WHEN quiz.base_size_id < transactions.base_size_id THEN 'up'
+            WHEN quiz.base_size_id > transactions.base_size_id THEN 'down'
+        END AS up_or_down,
+        count(*) AS entries,
+        sum(transactions.quantity) AS quantity,
+        count(distinct quiz.profile_id) AS profiles,
+        (sum(transactions.quantity) - sum(transactions.return_quantity)) as net_quantity
+    FROM quiz_sizes_pivot_all_users AS quiz
+    INNER JOIN training_data_purchases AS transactions
+    ON quiz.signup_size_category_id = transactions.garment_category_id
+        AND quiz.profile_id = transactions.profile_id
+    GROUP by
+        quiz.signup_size_category_id,
+        quiz.sizing_range_id,
+        transactions.garment_category_id,
+        transactions.sizing_range_id,
+        quiz.base_size_id,
+        up_or_down
+),
+ranks AS
+(
+    SELECT
+        *,
+        ROW_NUMBER() OVER
+        (
+            PARTITION BY
+                quiz_signup_size_category_id,
+                quiz_sizing_range_id,
+                transactions_garment_category_id,
+                transactions_sizing_range_id,
+                quiz_base_size_id
+            ORDER BY net_quantity DESC
+        ) AS rank
+    FROM coocc
+),
+pred_scores as 
+(
+    SELECT
+        query.garment_category_id,
+        query.profile_id,
+        query.sizing_range_id,
+        ranks.up_or_down,
+        ranks.quiz_base_size_id,
+        ranks.entries
+    FROM temp_nick_size_pred_query_set AS query
+    INNER JOIN quiz_sizes_pivot_all_users AS quiz_sizes
+    ON query.profile_id = quiz_sizes.profile_id
+        AND query.garment_category_id = quiz_sizes.signup_size_category_id
+    INNER JOIN ranks
+    ON query.garment_category_id = ranks.transactions_garment_category_id
+        and quiz_sizes.signup_size_category_id = ranks.quiz_signup_size_category_id
+        and query.sizing_range_id = ranks.transactions_sizing_range_id
+        and quiz_sizes.sizing_range_id = ranks.quiz_sizing_range_id
+        and quiz_sizes.base_size_id = ranks.quiz_base_size_id
+    WHERE ranks.rank = 1
+),
+temp_nick_size_pred_learn_updown AS
+(
+SELECT
+    garment_category_id,
+    profile_id,
+    sizing_range_id,
+    quiz_base_size_id,
+    up_or_down
+FROM pred_scores
+WHERE entries>=10
+)
+SELECT
+    test.garment_category_id,
+    test.profile_id,
+    test.sizing_Range_id,
+    test.garment_id,
+    test.quantity,
+    test.return_quantity,
+    test.base_size_id AS real_base_size_id,
+    preds.quiz_base_size_id AS quiz_base_size_id,
+    preds.up_or_down AS up_or_down,
+    CASE
+        WHEN real_base_size_id < quiz_base_size_id AND up_or_down = 'down' THEN true 
+        WHEN real_base_size_id = quiz_base_size_id AND up_or_down = 'same' THEN true 
+        WHEN real_base_size_id > quiz_base_size_id AND up_or_down = 'up' THEN true 
+        ELSE false END
+    AS correct_pred
+    FROM temp_nick_size_pred_test_set AS test 
+    LEFT JOIN temp_nick_size_pred_learn_updown AS preds 
+    ON test.garment_category_id = preds.garment_category_id
+        AND test.profile_id = preds.profile_id
+        AND test.sizing_range_id = preds.sizing_range_id

@@ -1,0 +1,7 @@
+garment_category_id,
+num_entries,
+quantity,
+return_quantity,
+num_entries_correct,
+quantity_correct,
+return_quantity_correct

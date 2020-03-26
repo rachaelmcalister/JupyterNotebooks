@@ -1,0 +1,14 @@
+SELECT
+    p.profile_id,
+    p.finished_signup_at,
+    s.dresses_base_size_id,
+    s.tops_base_size_id,
+    s.trousers_base_size_id,
+    s.dresses_sizing_range_id,
+    s.tops_sizing_range_id,
+    s.trousers_sizing_range_id
+FROM activity_johnlewis.v_profile_this_partner AS p
+INNER JOIN shared_resources.d_profile_signup_size AS s
+ON p.profile_id = s.profile_id
+WHERE s.dresses_base_size_id IS NOT NULL
+    AND '2019-01-01' <= finished_signup_at AND finished_signup_at < '2019-11-01'
